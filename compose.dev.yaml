@@ -1,0 +1,12 @@
+services:
+  app:
+    container_name: gleeam-sqlite-dev
+    image: gleeam-sqlite-dev
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+    volumes:
+      - .:/app
+    stdin_open: true
+    tty: true
+    command: sleep infinity

@@ -1,0 +1,11 @@
+{
+  "name": "Gleam",
+  "dockerComposeFile": "../compose.dev.yaml",
+  "service": "app",
+  "workspaceFolder": "/app",
+  "customizations": {
+    "vscode": {
+      "extensions": ["gleam.gleam"]
+    }
+  }
+}
