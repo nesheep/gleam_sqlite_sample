@@ -7,6 +7,10 @@ services:
       dockerfile: .devcontainer/Dockerfile
     volumes:
       - .:/app
+      - db-data:/data
     stdin_open: true
     tty: true
     command: sleep infinity
+
+volumes:
+  db-data:

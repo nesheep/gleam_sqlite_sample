@@ -1,4 +1,9 @@
+import sqlight
 import wisp
+
+pub type Context {
+  Context(db: sqlight.Connection)
+}
 
 pub fn middleware(
   req: wisp.Request,

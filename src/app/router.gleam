@@ -1,8 +1,8 @@
-import app/web
+import app/web.{type Context}
 import gleam/json
 import wisp.{type Request, type Response}
 
-pub fn handle_request(req: Request) -> Response {
+pub fn handle_request(req: Request, _ctx: Context) -> Response {
   use req <- web.middleware(req)
 
   let name = case wisp.path_segments(req) {
