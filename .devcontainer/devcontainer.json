@@ -5,7 +5,7 @@
   "workspaceFolder": "/app",
   "customizations": {
     "vscode": {
-      "extensions": ["gleam.gleam"]
+      "extensions": ["gleam.gleam", "tamasfe.even-better-toml"]
     }
   }
 }

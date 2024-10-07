@@ -1,0 +1,9 @@
+services:
+  app:
+    container_name: gleeam-sqlite-prod
+    image: gleeam-sqlite-prod
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - 18000:8000
