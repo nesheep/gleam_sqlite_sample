@@ -11,6 +11,17 @@ services:
     stdin_open: true
     tty: true
     command: sleep infinity
+  migrator:
+    container_name: gleeam-migrator-dev
+    image: gleeam-migrator-dev
+    build:
+      context: .
+      dockerfile: migration/Dockerfile
+    volumes:
+      - ./migration:/workspace
+      - db-data:/data
+    stdin_open: true
+    tty: true
 
 volumes:
   db-data:

@@ -10,13 +10,14 @@ pub fn main() {
   wisp.configure_logger()
   let secret_key_base = wisp.random_string(64)
 
-  use db <- sqlight.with_connection("/data/sample.db")
-
-  let context = web.Context(db: db)
-  let handler = router.handle_request(_, context)
+  let handle_request = fn(req) {
+    use db <- sqlight.with_connection("/data/sample.db")
+    let ctx = web.Context(db: db)
+    router.handle_request(req, ctx)
+  }
 
   let assert Ok(_) =
-    wisp_mist.handler(handler, secret_key_base)
+    wisp_mist.handler(handle_request, secret_key_base)
     |> mist.new
     |> mist.port(8000)
     |> mist.start_http
