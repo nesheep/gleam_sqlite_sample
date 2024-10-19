@@ -2,6 +2,7 @@ import app/todos
 import app/web.{type Context}
 import gleam/http
 import gleam/json
+import gleam/result
 import wisp.{type Request, type Response}
 
 pub fn handle_request(req: Request, ctx: Context) -> Response {
@@ -36,8 +37,17 @@ fn list_all_todos(_req: Request, ctx: Context) -> Response {
   wisp.json_response(body, 200)
 }
 
-fn create_todo(_req: Request, _ctx: Context) -> Response {
-  let res = [#("message", json.string("create todo"))]
+fn create_todo(req: Request, ctx: Context) -> Response {
+  use req_body <- wisp.require_json(req)
+  let result = {
+    use content <- result.try(todos.decode_create_request(req_body))
+    todos.create(ctx.db, content)
+  }
+  let res =
+    result
+    |> result.map(fn(id) { [#("created_id", json.int(id))] })
+    |> result.map_error(fn(_) { [#("message", json.string("error"))] })
+    |> result.unwrap_both
   let body = res |> json.object |> json.to_string_builder
   wisp.json_response(body, 201)
 }
