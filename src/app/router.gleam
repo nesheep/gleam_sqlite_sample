@@ -1,6 +1,7 @@
 import app/todos
 import app/web.{type Context}
 import gleam/http
+import gleam/int
 import gleam/json
 import gleam/result
 import wisp.{type Request, type Response}
@@ -11,6 +12,7 @@ pub fn handle_request(req: Request, ctx: Context) -> Response {
   case wisp.path_segments(req) {
     [] -> hello()
     ["todos"] -> todos(req, ctx)
+    ["todos", id] -> todo_item(req, ctx, id)
     _ -> wisp.not_found()
   }
 }
@@ -50,4 +52,29 @@ fn create_todo(req: Request, ctx: Context) -> Response {
     |> result.unwrap_both
   let body = res |> json.object |> json.to_string_builder
   wisp.json_response(body, 201)
+}
+
+fn todo_item(req: Request, ctx: Context, id: String) -> Response {
+  case req.method {
+    http.Patch -> update_todo(req, ctx, id)
+    _ -> wisp.method_not_allowed([http.Patch])
+  }
+}
+
+fn update_todo(req: Request, ctx: Context, id: String) -> Response {
+  use req_body <- wisp.require_json(req)
+  let result = {
+    use id <- result.try(int.parse(id))
+    use completed <- result.try(todos.decode_update_request(req_body))
+    todos.update(ctx.db, id, completed)
+  }
+  let res =
+    result
+    |> result.map(todos.to_json)
+    |> result.map_error(fn(_) {
+      [#("message", json.string("error"))] |> json.object
+    })
+    |> result.unwrap_both
+  let body = res |> json.to_string_builder
+  wisp.json_response(body, 200)
 }

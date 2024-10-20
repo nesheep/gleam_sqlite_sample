@@ -21,6 +21,11 @@ pub fn decode_create_request(body: dynamic.Dynamic) -> Result(String, Nil) {
   decoder(body) |> result.nil_error
 }
 
+pub fn decode_update_request(body: dynamic.Dynamic) -> Result(Bool, Nil) {
+  let decoder = dynamic.field("completed", dynamic.bool)
+  decoder(body) |> result.nil_error
+}
+
 fn todo_row_decoder() -> dynamic.Decoder(Todo) {
   dynamic.decode3(
     Todo,
@@ -60,4 +65,29 @@ pub fn create(db: sqlight.Connection, content: String) -> Result(Int, Nil) {
 
   let assert [id] = rows
   Ok(id)
+}
+
+const update_sql = "
+update todos
+set completed = ?1
+where id = ?2
+returning id, content, completed
+"
+
+pub fn update(
+  db: sqlight.Connection,
+  id: Int,
+  completed: Bool,
+) -> Result(Todo, Nil) {
+  let assert Ok(rows) =
+    sqlight.query(
+      update_sql,
+      db,
+      [sqlight.bool(completed), sqlight.int(id)],
+      todo_row_decoder(),
+    )
+  case rows {
+    [t] -> Ok(t)
+    _ -> Error(Nil)
+  }
 }
