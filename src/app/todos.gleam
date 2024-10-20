@@ -1,4 +1,5 @@
 import app/web.{type Context}
+import birl.{type Time}
 import gleam/dynamic
 import gleam/int
 import gleam/json
@@ -7,7 +8,7 @@ import sqlight
 import wisp.{type Request, type Response}
 
 type Todo {
-  Todo(id: Int, content: String, completed: Bool)
+  Todo(id: Int, content: String, completed: Bool, created_at: Time)
 }
 
 fn to_json(t: Todo) -> json.Json {
@@ -15,6 +16,7 @@ fn to_json(t: Todo) -> json.Json {
     #("id", json.int(t.id)),
     #("content", json.string(t.content)),
     #("completed", json.bool(t.completed)),
+    #("created_at", json.string(t.created_at |> birl.to_iso8601)),
   ]
   |> json.object
 }
@@ -84,17 +86,26 @@ pub fn handle_delete(_req: Request, ctx: Context, id: String) -> Response {
   wisp.json_response(body, 201)
 }
 
+fn time_decoder(data: dynamic.Dynamic) -> Result(Time, dynamic.DecodeErrors) {
+  use str <- result.try(dynamic.string(data))
+  case birl.parse(str <> "Z") {
+    Ok(t) -> Ok(t)
+    Error(_) -> Error([dynamic.DecodeError("birl.Time", "String", [])])
+  }
+}
+
 fn todo_row_decoder() -> dynamic.Decoder(Todo) {
-  dynamic.decode3(
+  dynamic.decode4(
     Todo,
     dynamic.element(0, dynamic.int),
     dynamic.element(1, dynamic.string),
     dynamic.element(2, sqlight.decode_bool),
+    dynamic.element(3, time_decoder),
   )
 }
 
 const list_all_sql = "
-select id, content, completed
+select id, content, completed, created_at
 from todos
 order by id desc
 "
@@ -129,7 +140,7 @@ const update_sql = "
 update todos
 set completed = ?1
 where id = ?2
-returning id, content, completed
+returning id, content, completed, created_at
 "
 
 fn update(db: sqlight.Connection, id: Int, completed: Bool) -> Result(Todo, Nil) {
