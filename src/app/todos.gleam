@@ -91,3 +91,14 @@ pub fn update(
     _ -> Error(Nil)
   }
 }
+
+const delete_sql = "
+delete from todos
+where id = ?1
+"
+
+pub fn delete(db: sqlight.Connection, id: Int) -> Nil {
+  let assert Ok(_) =
+    sqlight.query(delete_sql, on: db, with: [sqlight.int(id)], expecting: Ok)
+  Nil
+}

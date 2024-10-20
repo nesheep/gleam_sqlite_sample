@@ -57,6 +57,7 @@ fn create_todo(req: Request, ctx: Context) -> Response {
 fn todo_item(req: Request, ctx: Context, id: String) -> Response {
   case req.method {
     http.Patch -> update_todo(req, ctx, id)
+    http.Delete -> delete_todo(req, ctx, id)
     _ -> wisp.method_not_allowed([http.Patch])
   }
 }
@@ -77,4 +78,19 @@ fn update_todo(req: Request, ctx: Context, id: String) -> Response {
     |> result.unwrap_both
   let body = res |> json.to_string_builder
   wisp.json_response(body, 200)
+}
+
+fn delete_todo(_req: Request, ctx: Context, id: String) -> Response {
+  let result = {
+    use id <- result.try(int.parse(id))
+    todos.delete(ctx.db, id)
+    Ok(id)
+  }
+  let res =
+    result
+    |> result.map(fn(id) { [#("deleted_id", json.int(id))] })
+    |> result.map_error(fn(_) { [#("message", json.string("error"))] })
+    |> result.unwrap_both
+  let body = res |> json.object |> json.to_string_builder
+  wisp.json_response(body, 201)
 }
