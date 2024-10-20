@@ -8,7 +8,13 @@ import sqlight
 import wisp.{type Request, type Response}
 
 type Todo {
-  Todo(id: Int, content: String, completed: Bool, created_at: Time)
+  Todo(
+    id: Int,
+    content: String,
+    completed: Bool,
+    created_at: Time,
+    updated_at: Time,
+  )
 }
 
 fn to_json(t: Todo) -> json.Json {
@@ -17,6 +23,7 @@ fn to_json(t: Todo) -> json.Json {
     #("content", json.string(t.content)),
     #("completed", json.bool(t.completed)),
     #("created_at", json.string(t.created_at |> birl.to_iso8601)),
+    #("updated_at", json.string(t.updated_at |> birl.to_iso8601)),
   ]
   |> json.object
 }
@@ -86,7 +93,7 @@ pub fn handle_delete(_req: Request, ctx: Context, id: String) -> Response {
   wisp.json_response(body, 201)
 }
 
-fn time_decoder(data: dynamic.Dynamic) -> Result(Time, dynamic.DecodeErrors) {
+fn decode_time(data: dynamic.Dynamic) -> Result(Time, dynamic.DecodeErrors) {
   use str <- result.try(dynamic.string(data))
   case birl.parse(str <> "Z") {
     Ok(t) -> Ok(t)
@@ -95,17 +102,18 @@ fn time_decoder(data: dynamic.Dynamic) -> Result(Time, dynamic.DecodeErrors) {
 }
 
 fn todo_row_decoder() -> dynamic.Decoder(Todo) {
-  dynamic.decode4(
+  dynamic.decode5(
     Todo,
     dynamic.element(0, dynamic.int),
     dynamic.element(1, dynamic.string),
     dynamic.element(2, sqlight.decode_bool),
-    dynamic.element(3, time_decoder),
+    dynamic.element(3, decode_time),
+    dynamic.element(4, decode_time),
   )
 }
 
 const list_all_sql = "
-select id, content, completed, created_at
+select id, content, completed, created_at, updated_at
 from todos
 order by id desc
 "
@@ -116,8 +124,8 @@ fn list_all(db: sqlight.Connection) -> List(Todo) {
 }
 
 const create_sql = "
-insert into todos (content, completed)
-values (?1, 0)
+insert into todos (content)
+values (?1)
 returning id
 "
 
@@ -138,9 +146,9 @@ fn create(db: sqlight.Connection, content: String) -> Result(Int, Nil) {
 
 const update_sql = "
 update todos
-set completed = ?1
+set completed = ?1, updated_at = current_timestamp
 where id = ?2
-returning id, content, completed, created_at
+returning id, content, completed, created_at, updated_at
 "
 
 fn update(db: sqlight.Connection, id: Int, completed: Bool) -> Result(Todo, Nil) {
