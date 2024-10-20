@@ -34,6 +34,6 @@ fn todo_item(req: Request, ctx: Context, id: String) -> Response {
   case req.method {
     http.Patch -> todos.handle_update(req, ctx, id)
     http.Delete -> todos.handle_delete(req, ctx, id)
-    _ -> wisp.method_not_allowed([http.Patch])
+    _ -> wisp.method_not_allowed([http.Patch, http.Delete])
   }
 }
