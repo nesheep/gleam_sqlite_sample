@@ -24,7 +24,7 @@ fn hello() -> Response {
 
 fn todos(req: Request, ctx: Context) -> Response {
   case req.method {
-    http.Get -> todos.handle_list_all(req, ctx)
+    http.Get -> todos.handle_list_all(ctx)
     http.Post -> todos.handle_create(req, ctx)
     _ -> wisp.method_not_allowed([http.Get, http.Post])
   }
@@ -33,7 +33,7 @@ fn todos(req: Request, ctx: Context) -> Response {
 fn todo_item(req: Request, ctx: Context, id: String) -> Response {
   case req.method {
     http.Patch -> todos.handle_update(req, ctx, id)
-    http.Delete -> todos.handle_delete(req, ctx, id)
+    http.Delete -> todos.handle_delete(ctx, id)
     _ -> wisp.method_not_allowed([http.Patch, http.Delete])
   }
 }

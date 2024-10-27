@@ -1,5 +1,8 @@
+import app/error.{type AppError, BadRequest, NotFound, SqlightError}
+import gleam/int
+import gleam/result
 import sqlight
-import wisp
+import wisp.{type Response}
 
 pub type Context {
   Context(db: sqlight.Connection)
@@ -15,4 +18,16 @@ pub fn middleware(
   use req <- wisp.handle_head(req)
 
   handle_request(req)
+}
+
+pub fn error_to_response(error: AppError) -> Response {
+  case error {
+    NotFound -> wisp.not_found()
+    BadRequest -> wisp.bad_request()
+    SqlightError(_) -> wisp.internal_server_error()
+  }
+}
+
+pub fn parse_int(s: String) -> Result(Int, AppError) {
+  int.parse(s) |> result.replace_error(BadRequest)
 }

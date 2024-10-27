@@ -1,7 +1,7 @@
-import app/web.{type Context}
+import app/error.{type AppError, BadRequest, NotFound, SqlightError}
+import app/web.{type Context, parse_int}
 import birl.{type Time}
 import gleam/dynamic
-import gleam/int
 import gleam/json
 import gleam/result
 import sqlight
@@ -28,16 +28,20 @@ fn to_json(t: Todo) -> json.Json {
   |> json.object
 }
 
-pub fn handle_list_all(_req: Request, ctx: Context) -> Response {
-  let todos = list_all(ctx.db)
-  let res = [#("todos", json.array(todos, to_json))]
-  let body = res |> json.object |> json.to_string_builder
-  wisp.json_response(body, 200)
+pub fn handle_list_all(ctx: Context) -> Response {
+  let result = list_all(ctx.db)
+  case result {
+    Ok(todos) ->
+      json.object([#("todos", json.array(todos, to_json))])
+      |> json.to_string_builder
+      |> wisp.json_response(200)
+    Error(err) -> web.error_to_response(err)
+  }
 }
 
-fn decode_create_request(body: dynamic.Dynamic) -> Result(String, Nil) {
+fn decode_create_request(body: dynamic.Dynamic) -> Result(String, AppError) {
   let decoder = dynamic.field("content", dynamic.string)
-  decoder(body) |> result.nil_error
+  decoder(body) |> result.replace_error(BadRequest)
 }
 
 pub fn handle_create(req: Request, ctx: Context) -> Response {
@@ -46,51 +50,49 @@ pub fn handle_create(req: Request, ctx: Context) -> Response {
     use content <- result.try(decode_create_request(req_body))
     create(ctx.db, content)
   }
-  let res =
-    result
-    |> result.map(fn(id) { [#("created_id", json.int(id))] })
-    |> result.map_error(fn(_) { [#("message", json.string("error"))] })
-    |> result.unwrap_both
-  let body = res |> json.object |> json.to_string_builder
-  wisp.json_response(body, 201)
+  case result {
+    Ok(id) ->
+      json.object([#("created_id", json.int(id))])
+      |> json.to_string_builder
+      |> wisp.json_response(201)
+    Error(err) -> web.error_to_response(err)
+  }
 }
 
-fn decode_update_request(body: dynamic.Dynamic) -> Result(Bool, Nil) {
+fn decode_update_request(body: dynamic.Dynamic) -> Result(Bool, AppError) {
   let decoder = dynamic.field("completed", dynamic.bool)
-  decoder(body) |> result.nil_error
+  decoder(body) |> result.replace_error(BadRequest)
 }
 
 pub fn handle_update(req: Request, ctx: Context, id: String) -> Response {
   use req_body <- wisp.require_json(req)
   let result = {
-    use id <- result.try(int.parse(id))
+    use id <- result.try(parse_int(id))
     use completed <- result.try(decode_update_request(req_body))
     update(ctx.db, id, completed)
   }
-  let res =
-    result
-    |> result.map(to_json)
-    |> result.map_error(fn(_) {
-      [#("message", json.string("error"))] |> json.object
-    })
-    |> result.unwrap_both
-  let body = res |> json.to_string_builder
-  wisp.json_response(body, 200)
+  case result {
+    Ok(t) ->
+      to_json(t)
+      |> json.to_string_builder
+      |> wisp.json_response(200)
+    Error(err) -> web.error_to_response(err)
+  }
 }
 
-pub fn handle_delete(_req: Request, ctx: Context, id: String) -> Response {
+pub fn handle_delete(ctx: Context, id: String) -> Response {
   let result = {
-    use id <- result.try(int.parse(id))
-    delete(ctx.db, id)
+    use id <- result.try(parse_int(id))
+    use _ <- result.try(delete(ctx.db, id))
     Ok(id)
   }
-  let res =
-    result
-    |> result.map(fn(id) { [#("deleted_id", json.int(id))] })
-    |> result.map_error(fn(_) { [#("message", json.string("error"))] })
-    |> result.unwrap_both
-  let body = res |> json.object |> json.to_string_builder
-  wisp.json_response(body, 201)
+  case result {
+    Ok(id) ->
+      json.object([#("deleted_id", json.int(id))])
+      |> json.to_string_builder
+      |> wisp.json_response(200)
+    Error(err) -> web.error_to_response(err)
+  }
 }
 
 fn decode_time(data: dynamic.Dynamic) -> Result(Time, dynamic.DecodeErrors) {
@@ -118,9 +120,9 @@ from todos
 order by id desc
 "
 
-fn list_all(db: sqlight.Connection) -> List(Todo) {
-  let assert Ok(rows) = sqlight.query(list_all_sql, db, [], todo_row_decoder())
-  rows
+fn list_all(db: sqlight.Connection) -> Result(List(Todo), AppError) {
+  sqlight.query(list_all_sql, db, [], todo_row_decoder())
+  |> result.map_error(fn(err) { SqlightError(err) })
 }
 
 const create_sql = "
@@ -129,17 +131,16 @@ values (?1)
 returning id
 "
 
-fn create(db: sqlight.Connection, content: String) -> Result(Int, Nil) {
-  use rows <- result.then(
+fn create(db: sqlight.Connection, content: String) -> Result(Int, AppError) {
+  use rows <- result.try(
     sqlight.query(
       create_sql,
       on: db,
       with: [sqlight.text(content)],
       expecting: dynamic.element(0, dynamic.int),
     )
-    |> result.nil_error,
+    |> result.map_error(fn(err) { SqlightError(err) }),
   )
-
   let assert [id] = rows
   Ok(id)
 }
@@ -151,27 +152,44 @@ where id = ?2
 returning id, content, completed, created_at, updated_at
 "
 
-fn update(db: sqlight.Connection, id: Int, completed: Bool) -> Result(Todo, Nil) {
-  let assert Ok(rows) =
+fn update(
+  db: sqlight.Connection,
+  id: Int,
+  completed: Bool,
+) -> Result(Todo, AppError) {
+  use rows <- result.try(
     sqlight.query(
       update_sql,
       db,
       [sqlight.bool(completed), sqlight.int(id)],
       todo_row_decoder(),
     )
+    |> result.map_error(fn(err) { SqlightError(err) }),
+  )
   case rows {
     [t] -> Ok(t)
-    _ -> Error(Nil)
+    _ -> Error(NotFound)
   }
 }
 
 const delete_sql = "
 delete from todos
 where id = ?1
+returning id
 "
 
-pub fn delete(db: sqlight.Connection, id: Int) -> Nil {
-  let assert Ok(_) =
-    sqlight.query(delete_sql, on: db, with: [sqlight.int(id)], expecting: Ok)
-  Nil
+pub fn delete(db: sqlight.Connection, id: Int) -> Result(Nil, AppError) {
+  use rows <- result.try(
+    sqlight.query(
+      delete_sql,
+      on: db,
+      with: [sqlight.int(id)],
+      expecting: dynamic.element(0, dynamic.int),
+    )
+    |> result.map_error(fn(err) { SqlightError(err) }),
+  )
+  case rows {
+    [_] -> Ok(Nil)
+    _ -> Error(NotFound)
+  }
 }
