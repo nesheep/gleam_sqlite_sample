@@ -29,14 +29,36 @@ fn to_json(t: Todo) -> json.Json {
 }
 
 pub fn handle_list_all(ctx: Context) -> Response {
-  let result = list_all(ctx.db)
-  case result {
-    Ok(todos) ->
-      json.object([#("todos", json.array(todos, to_json))])
-      |> json.to_string_builder
-      |> wisp.json_response(200)
-    Error(err) -> web.error_to_response(err)
+  let output_fn = fn(result: Result(List(Todo), AppError)) -> Response {
+    case result {
+      Ok(todos) ->
+        json.object([#("todos", json.array(todos, to_json))])
+        |> json.to_string_builder
+        |> wisp.json_response(200)
+      Error(err) -> web.error_to_response(err)
+    }
   }
+
+  let list_all_fn = fn() { list_all(ctx.db) }
+
+  let app = new_list_all(ListAllCfg(output_fn:, list_all_fn:))
+  app()
+}
+
+type ListAllCfg(a) {
+  ListAllCfg(
+    output_fn: fn(Result(List(Todo), AppError)) -> a,
+    list_all_fn: fn() -> Result(List(Todo), AppError),
+  )
+}
+
+fn new_list_all(cfg: ListAllCfg(a)) -> fn() -> a {
+  fn() { run_list_all(cfg) }
+}
+
+fn run_list_all(cfg: ListAllCfg(a)) -> a {
+  cfg.list_all_fn()
+  |> cfg.output_fn
 }
 
 fn decode_create_request(body: dynamic.Dynamic) -> Result(String, AppError) {
@@ -46,17 +68,45 @@ fn decode_create_request(body: dynamic.Dynamic) -> Result(String, AppError) {
 
 pub fn handle_create(req: Request, ctx: Context) -> Response {
   use req_body <- wisp.require_json(req)
-  let result = {
-    use content <- result.try(decode_create_request(req_body))
-    create(ctx.db, content)
+
+  let input_fn = fn() -> Result(String, AppError) {
+    decode_create_request(req_body)
   }
-  case result {
-    Ok(id) ->
-      json.object([#("created_id", json.int(id))])
-      |> json.to_string_builder
-      |> wisp.json_response(201)
-    Error(err) -> web.error_to_response(err)
+
+  let output_fn = fn(result: Result(Int, AppError)) -> Response {
+    case result {
+      Ok(id) ->
+        json.object([#("created_id", json.int(id))])
+        |> json.to_string_builder
+        |> wisp.json_response(201)
+      Error(err) -> web.error_to_response(err)
+    }
   }
+
+  let create_fn = create(ctx.db, _)
+
+  let app = new_create(CreateCfg(input_fn:, output_fn:, create_fn:))
+  app()
+}
+
+type CreateCfg(a) {
+  CreateCfg(
+    input_fn: fn() -> Result(String, AppError),
+    output_fn: fn(Result(Int, AppError)) -> a,
+    create_fn: fn(String) -> Result(Int, AppError),
+  )
+}
+
+fn new_create(cfg: CreateCfg(a)) -> fn() -> a {
+  fn() { run_create(cfg) }
+}
+
+fn run_create(cfg: CreateCfg(a)) -> a {
+  {
+    use content <- result.try(cfg.input_fn())
+    cfg.create_fn(content)
+  }
+  |> cfg.output_fn
 }
 
 fn decode_update_request(body: dynamic.Dynamic) -> Result(Bool, AppError) {
@@ -66,33 +116,91 @@ fn decode_update_request(body: dynamic.Dynamic) -> Result(Bool, AppError) {
 
 pub fn handle_update(req: Request, ctx: Context, id: String) -> Response {
   use req_body <- wisp.require_json(req)
-  let result = {
+
+  let input_fn = fn() -> Result(UpdateInput, AppError) {
     use id <- result.try(parse_int(id))
     use completed <- result.try(decode_update_request(req_body))
-    update(ctx.db, id, completed)
+    Ok(UpdateInput(id:, completed:))
   }
-  case result {
-    Ok(t) ->
-      to_json(t)
-      |> json.to_string_builder
-      |> wisp.json_response(200)
-    Error(err) -> web.error_to_response(err)
+
+  let output_fn = fn(result: Result(Todo, AppError)) -> Response {
+    case result {
+      Ok(t) ->
+        to_json(t)
+        |> json.to_string_builder
+        |> wisp.json_response(200)
+      Error(err) -> web.error_to_response(err)
+    }
   }
+
+  let update_fn = fn(id: Int, completed: Bool) { update(ctx.db, id, completed) }
+
+  let app = new_update(UpdateCfg(input_fn:, output_fn:, update_fn:))
+  app()
+}
+
+type UpdateCfg(a) {
+  UpdateCfg(
+    input_fn: fn() -> Result(UpdateInput, AppError),
+    output_fn: fn(Result(Todo, AppError)) -> a,
+    update_fn: fn(Int, Bool) -> Result(Todo, AppError),
+  )
+}
+
+type UpdateInput {
+  UpdateInput(id: Int, completed: Bool)
+}
+
+fn new_update(cfg: UpdateCfg(a)) -> fn() -> a {
+  fn() { run_update(cfg) }
+}
+
+fn run_update(cfg: UpdateCfg(a)) -> a {
+  {
+    use input <- result.try(cfg.input_fn())
+    cfg.update_fn(input.id, input.completed)
+  }
+  |> cfg.output_fn
 }
 
 pub fn handle_delete(ctx: Context, id: String) -> Response {
-  let result = {
-    use id <- result.try(parse_int(id))
-    use _ <- result.try(delete(ctx.db, id))
+  let input_fn = fn() -> Result(Int, AppError) { parse_int(id) }
+
+  let output_fn = fn(result: Result(Int, AppError)) -> Response {
+    case result {
+      Ok(id) ->
+        json.object([#("deleted_id", json.int(id))])
+        |> json.to_string_builder
+        |> wisp.json_response(200)
+      Error(err) -> web.error_to_response(err)
+    }
+  }
+
+  let delete_fn = delete(ctx.db, _)
+
+  let app = new_delete(DeleteCfg(input_fn:, output_fn:, delete_fn:))
+  app()
+}
+
+type DeleteCfg(a) {
+  DeleteCfg(
+    input_fn: fn() -> Result(Int, AppError),
+    output_fn: fn(Result(Int, AppError)) -> a,
+    delete_fn: fn(Int) -> Result(Nil, AppError),
+  )
+}
+
+fn new_delete(cfg: DeleteCfg(a)) -> fn() -> a {
+  fn() { run_delete(cfg) }
+}
+
+fn run_delete(cfg: DeleteCfg(a)) -> a {
+  {
+    use id <- result.try(cfg.input_fn())
+    use _ <- result.try(cfg.delete_fn(id))
     Ok(id)
   }
-  case result {
-    Ok(id) ->
-      json.object([#("deleted_id", json.int(id))])
-      |> json.to_string_builder
-      |> wisp.json_response(200)
-    Error(err) -> web.error_to_response(err)
-  }
+  |> cfg.output_fn
 }
 
 fn decode_time(data: dynamic.Dynamic) -> Result(Time, dynamic.DecodeErrors) {
