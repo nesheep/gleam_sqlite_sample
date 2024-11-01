@@ -8,7 +8,9 @@ services:
     volumes:
       - db-data:/data
     ports:
-      - 18000:8000
+      - 18000:18000
+    env_file:
+      - ./env/.env.prod
 
 volumes:
   db-data:

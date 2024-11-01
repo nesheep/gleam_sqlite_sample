@@ -3,3 +3,9 @@ development:
   datasource: /data/sample.db
   dir: migrations
   table: migrations
+
+production:
+  dialect: sqlite3
+  datasource: /data/prod.db
+  dir: migrations
+  table: migrations

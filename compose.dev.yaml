@@ -8,6 +8,8 @@ services:
     volumes:
       - .:/app
       - db-data:/data
+    env_file:
+      - ./env/.env.dev
     stdin_open: true
     tty: true
     command: sleep infinity
